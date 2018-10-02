@@ -103,3 +103,6 @@ venv.bak/
 # mypy
 .mypy_cache/
 /Video
+/Extracted_frames
+/training_summaries
+/Training_set
