@@ -8,8 +8,6 @@
 #TODO instructions for copying trained model...
 # ==============================================================================
 
-
-
 import argparse
 import sys
 import os.path
@@ -30,23 +28,17 @@ def check_if_path_exists(path):
       raise IOError(msg)
 
 def get_files_in_folder(path,extensions):
-  """Check if file/folder exists and create if not"""
-  #      if entry.is_file() and entry.path.endswith(extension):
- #       pathList.append(entry.path)
   files=[]
   try:
-    #print(*extensions, sep=", ")   
     for entry in os.scandir(path):
       if entry.is_file() and os.path.splitext(entry)[1].lower() in extensions:
         files.append(entry.path)
   except OSError:
-      print('Cannot access ' + path +'. Probably a permissions error')
+      logEvent('Cannot access ' + path +'. Probably a permissions error')
   return files
 
 def extract_frames ():
-
   """Extract frames from video"""
-
   files=[]
   if (not video_path=="") and os.path.splitext(video_path)[1].lower() in extensions:
     files.append (video_path) 
@@ -58,24 +50,23 @@ def extract_frames ():
   start = timeit.default_timer()
   for file in files:
     i+=1
-    print ('Processing file %s (file %d of %d) please wait.' % (file,i,cnt))
+    logEvent ('Processing file %s (file %d of %d) please wait.' % (file,i,cnt))
     ffmpeg_exe =os.path.join(ffmpeg_folder, "bin\\ffmpeg.exe")
     filename_no_extension=os.path.splitext(os.path.split(file)[1])[0]
     cmd = "%s -i %s -vf fps=1/%d %s\\%s_%%d.jpg" % (ffmpeg_exe,file,sampling_rate,destination_folder,filename_no_extension)
-    #print (cmd)
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,universal_newlines=True)
     out, err = p.communicate()
     retCode = p.returncode
     if not retCode==0:
-      print ("ERROR happened aborting!!")
-      print (err)
+      logEvent ("ERROR happened aborting!!")
+      logEvent (err)
       break
     destination = os.path.join(os.path.split(file)[0],"Processed")
     ensure_path_exists(destination)
     newFileName = os.path.join(destination,os.path.split(file)[1])
     elapsed = timeit.default_timer()-start
     files_per_second = (i/elapsed)  
-    print ('File %s processed.Moving to %s. Current processing speed: %f files/second. Estimated remaining time %s' % (file,newFileName,files_per_second,str(datetime.timedelta(seconds=(cnt-i)/files_per_second))))  
+    logEvent ('File %s processed.Moving to %s. Current processing speed: %f files/second. Estimated remaining time %s' % (file,newFileName,files_per_second,str(datetime.timedelta(seconds=(cnt-i)/files_per_second))))  
     os.rename(file, newFileName)
     
 def label_frames (): 
@@ -86,7 +77,7 @@ def label_frames ():
   start = timeit.default_timer()
   for file in files:
     i+=1
-    print ('Processing file %s (file %d of %d) please wait.' % (file,i,cnt))
+    logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
     scriptPath = os.path.join(tensorflow_folder,"scripts\\label_image.py")
     graphPath =  "tf_files\\retrained_graph.pb"
     labelsPath = "tf_files\\retrained_labels.txt"
@@ -95,9 +86,10 @@ def label_frames ():
     out, err = p.communicate()
     retCode = p.returncode
     if not retCode==0:
-      print ("ERROR happened aborting!!")
-      print (err)
+      logEvent ("ERROR happened aborting!!")
+      logEvent (err)
       break
+ 
     lines = out.split("\n")
     labels = lines[3:len(lines)-1]
     labels.sort(key=lambda x: get_score_from_item(x),reverse=True)
@@ -106,15 +98,18 @@ def label_frames ():
     score=labels[0].split(' ')[1]
     filename=os.path.split(file)[1]
     elapsed = timeit.default_timer()-start
-    print ("\tImage %s is in category %s %s. Copying to %s folder." % (filename,category.upper(),score,category))
+    logEvent ("\tImage %s is in category %s %s. Copying to %s folder." % (filename,category.upper(),score,category))
     if (i % 5 ==0):
       images_per_second = (i/elapsed)  
       time_remaining = (cnt-i)/images_per_second
-      print ("Current processing speed %f images/second. Estimated remaining time %s" %(images_per_second, str(datetime.timedelta(seconds=time_remaining))))
+      logEvent ("Current processing speed %f images/second. Estimated remaining time %s" %(images_per_second, str(datetime.timedelta(seconds=time_remaining))))
     destination = os.path.join(destination_folder,category)
     ensure_path_exists(destination)
     newFileName = os.path.join(destination,filename)
     os.rename(file, newFileName)
+
+def logEvent(message):
+  print ("[%s] %s" % (str(datetime.datetime.now().time()),message))
 
 def get_score_from_item(item):
   return re.search('\((.+?)\)',item).group(1)
@@ -133,7 +128,6 @@ if __name__ == "__main__":
   parser.add_argument("--sampling_rate",  type=int, choices=range(1, 31), required=True, help="Sampling rate, --sampling_rate=6 means 1 image every 6 seconds of movie")
   parser.add_argument("--tensorflow_folder",  type=str, required=False, help="Folder where tensorflow was cloned and model trained")
  
-  
   args = parser.parse_args()
 
   if args.ffmpeg_folder:
@@ -160,15 +154,16 @@ if __name__ == "__main__":
   ensure_path_exists(destination_folder)
   
   check_if_path_exists(tensorflow_folder)
-  
+  print ("\n\n")
   extract_frames()
   label_frames()
+  logEvent("All Done")
 
   
   
   
   
-  #python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-20180928-179ed2d-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6 --tensorflow_folder=D:\Development\tensorflow-for-poets-2
+  #python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-4.0.2-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6 --tensorflow_folder=D:\Development\tensorflow-for-poets-2
   
   
 
