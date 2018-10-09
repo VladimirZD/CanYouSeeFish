@@ -15,6 +15,9 @@ import subprocess
 import re
 import timeit
 import datetime
+import time
+import tensorflow as tf
+import numpy as np
 
 def ensure_path_exists(path):
   """Check if file/folder exists and create if not"""
@@ -68,8 +71,8 @@ def extract_frames ():
     files_per_second = (i/elapsed)  
     logEvent ('File %s processed.Moving to %s. Current processing speed: %f files/second. Estimated remaining time %s' % (file,newFileName,files_per_second,str(datetime.timedelta(seconds=(cnt-i)/files_per_second))))  
     os.rename(file, newFileName)
-    
-def label_frames (): 
+
+def label_frames(): 
   exts = ['.jpg']
   files = get_files_in_folder(destination_folder,exts)
   cnt =len(files)
@@ -78,24 +81,15 @@ def label_frames ():
   for file in files:
     i+=1
     logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
-    scriptPath = os.path.join(tensorflow_folder,"scripts\\label_image.py")
+
     graphPath =  "tf_files\\retrained_graph.pb"
     labelsPath = "tf_files\\retrained_labels.txt"
-    cmd="python %s --graph=%s --labels=%s --image=%s" %(scriptPath,graphPath,labelsPath,file)
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,universal_newlines=True)
-    out, err = p.communicate()
-    retCode = p.returncode
-    if not retCode==0:
-      logEvent ("ERROR happened aborting!!")
-      logEvent (err)
-      break
- 
-    lines = out.split("\n")
-    labels = lines[3:len(lines)-1]
+
+    labels = label_image_ext(file,labelsPath,graphPath)
     labels.sort(key=lambda x: get_score_from_item(x),reverse=True)
-    
     category=labels[0].split(' ')[0]
     score=labels[0].split(' ')[1]
+
     filename=os.path.split(file)[1]
     elapsed = timeit.default_timer()-start
     logEvent ("\tImage %s is in category %s %s. Copying to %s folder." % (filename,category.upper(),score,category))
@@ -112,8 +106,92 @@ def logEvent(message):
   print ("[%s] %s" % (str(datetime.datetime.now().time()),message))
 
 def get_score_from_item(item):
-  return re.search('\((.+?)\)',item).group(1)
+  return re.search('\\((.+?)\\)',item).group(1)
+
+'''Functions taken from  tensorflow for poets code lab https://codelabs.developers.google.com/codelabs/tensorflow-for-poets/#0 file label_image.py'''
+
+def load_labels(label_file):
+  label = []
+  proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
+  for l in proto_as_ascii_lines:
+    label.append(l.rstrip())
+  return label
+
+
+def read_tensor_from_image_file(file_name, input_height=299, input_width=299,
+				input_mean=0, input_std=255):
+  input_name = "file_reader"
+  #output_name = "normalized"
+  file_reader = tf.read_file(file_name, input_name)
+  if file_name.endswith(".png"):
+    image_reader = tf.image.decode_png(file_reader, channels = 3,
+                                       name='png_reader')
+  elif file_name.endswith(".gif"):
+    image_reader = tf.squeeze(tf.image.decode_gif(file_reader,
+                                                  name='gif_reader'))
+  elif file_name.endswith(".bmp"):
+    image_reader = tf.image.decode_bmp(file_reader, name='bmp_reader')
+  else:
+    image_reader = tf.image.decode_jpeg(file_reader, channels = 3,
+                                        name='jpeg_reader')
+  float_caster = tf.cast(image_reader, tf.float32)
+  dims_expander = tf.expand_dims(float_caster, 0)
+  resized = tf.image.resize_bilinear(dims_expander, [input_height, input_width])
+  normalized = tf.divide(tf.subtract(resized, [input_mean]), [input_std])
+  sess = tf.Session()
+  result = sess.run(normalized)
+  return result
+
+def load_graph(model_file):
+  graph = tf.Graph()
+  graph_def = tf.GraphDef()
+
+  with open(model_file, "rb") as f:
+    graph_def.ParseFromString(f.read())
+  with graph.as_default():
+    tf.import_graph_def(graph_def)
+  return graph
+
+def label_image_ext(file_name,label_file,model_file):
+  input_height = 224
+  input_width = 224
+  input_mean = 128
+  input_std = 128
+  input_layer = "input"
+  output_layer = "final_result"
+  graph = load_graph(model_file)
   
+  t = read_tensor_from_image_file(file_name,
+                                  input_height=input_height,
+                                  input_width=input_width,
+                                  input_mean=input_mean,
+                                  input_std=input_std)
+  input_name = "import/" + input_layer
+  output_name = "import/" + output_layer
+  input_operation = graph.get_operation_by_name(input_name)
+  output_operation = graph.get_operation_by_name(output_name)
+
+  with tf.Session(graph=graph) as sess:
+    #start = time.time()
+    results = sess.run(output_operation.outputs[0],
+                      {input_operation.outputs[0]: t})
+    #end=time.time()
+  results = np.squeeze(results)
+
+  top_k = results.argsort()[-5:][::-1]
+  labels = load_labels(label_file)
+
+  #print('\nEvaluation time (1-image): {:.3f}s\n'.format(end-start))
+  result = []
+  
+  template = "{} (score={:0.5f})"
+  for i in top_k:
+    result.append(template.format(labels[i], results[i]))
+    #print(template.format(labels[i], results[i]))
+  return result
+      
+'''End of Functions taken from  tensorflow for poets code lab https://codelabs.developers.google.com/codelabs/tensorflow-for-poets/#0 file label_image.py'''
+
 if __name__ == "__main__":
   ffmpeg_folder = ""
   video_path= ""
@@ -126,7 +204,7 @@ if __name__ == "__main__":
   parser.add_argument("--video_folder",  type=str, required=False, help="Folder to process, all videos in folder will be processed, subfolders ignored")
   parser.add_argument("--destination_folder",  type=str ,required=True, help="Folder in which images will be saved")
   parser.add_argument("--sampling_rate",  type=int, choices=range(1, 31), required=True, help="Sampling rate, --sampling_rate=6 means 1 image every 6 seconds of movie")
-  parser.add_argument("--tensorflow_folder",  type=str, required=False, help="Folder where tensorflow was cloned and model trained")
+
  
   args = parser.parse_args()
 
@@ -140,10 +218,7 @@ if __name__ == "__main__":
     destination_folder = args.destination_folder    
   if args.sampling_rate:
     sampling_rate = args.sampling_rate  
-  if args.tensorflow_folder:
-    tensorflow_folder = args.tensorflow_folder
-  
-  
+ 
   check_if_path_exists(ffmpeg_folder)
   if not (video_path ==""):
     check_if_path_exists(video_path)
@@ -153,7 +228,6 @@ if __name__ == "__main__":
     ensure_path_exists(os.path.join(video_folder,"processed"))
   ensure_path_exists(destination_folder)
   
-  check_if_path_exists(tensorflow_folder)
   print ("\n\n")
   extract_frames()
   label_frames()
@@ -163,7 +237,8 @@ if __name__ == "__main__":
   
   
   
-  #python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-4.0.2-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6 --tensorflow_folder=D:\Development\tensorflow-for-poets-2
-  
+#python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-4.0.2-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6
+#python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-20180928-179ed2d-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6
+
   
 
