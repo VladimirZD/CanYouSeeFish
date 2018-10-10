@@ -78,6 +78,8 @@ def label_frames():
   cnt =len(files)
   i=0
   start = timeit.default_timer()
+  '''Disable tensorflow logging...'''
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
   for file in files:
     i+=1
     logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
