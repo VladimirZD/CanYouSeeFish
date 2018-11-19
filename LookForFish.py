@@ -18,6 +18,7 @@ import datetime
 import time
 import tensorflow as tf
 import numpy as np
+from shutil import move
 
 def ensure_path_exists(path):
   """Check if file/folder exists and create if not"""
@@ -70,7 +71,7 @@ def extract_frames ():
     elapsed = timeit.default_timer()-start
     files_per_second = (i/elapsed)  
     logEvent ('File %s processed.Moving to %s. Current processing speed: %f files/second. Estimated remaining time %s' % (file,newFileName,files_per_second,str(datetime.timedelta(seconds=(cnt-i)/files_per_second))))  
-    os.rename(file, newFileName)
+    os.move(file, newFileName)
 
 def label_frames(): 
   exts = ['.jpg']
@@ -82,6 +83,7 @@ def label_frames():
   labels = load_labels(labelsPath)
   graph = load_graph(graphPath)
   
+
   input_height = 224
   input_width = 224
   input_mean = 128
@@ -93,30 +95,28 @@ def label_frames():
   input_operation = graph.get_operation_by_name(input_name)
   output_operation = graph.get_operation_by_name(output_name)
 
-  start = timeit.default_timer()
+  for label in labels:
+    ensure_path_exists(os.path.join(destination_folder,label))
   '''Disable tensorflow logging...'''
   os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+  start = timeit.default_timer()
+
   for file in files:
     i+=1
-    logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
-
-    #file_name,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation
+    #logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
     results = label_image_ext(file,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation)
-    results.sort(key=lambda x: get_score_from_item(x),reverse=True)
     category=results[0].split(' ')[0]
     score=results[0].split(' ')[1]
-
     filename=os.path.split(file)[1]
-    elapsed = timeit.default_timer()-start
-    logEvent ("\tImage %s is in category %s %s. Copying to %s folder." % (filename,category.upper(),score,category))
-    if (i % 5 ==0):
-      images_per_second = (i/elapsed)  
-      time_remaining = (cnt-i)/images_per_second
-      logEvent ("Current processing speed %f images/second. Estimated remaining time %s" %(images_per_second, str(datetime.timedelta(seconds=time_remaining))))
+    logEvent ("File %s (%d of %d) is in category %s %s. Copying to %s folder." % (filename,i,cnt,category.upper(),score,category))
     destination = os.path.join(destination_folder,category)
-    ensure_path_exists(destination)
     newFileName = os.path.join(destination,filename)
     os.rename(file, newFileName)
+    if (i % 10 ==0):
+        elapsed = timeit.default_timer()-start
+        images_per_second = (i/elapsed)  
+        time_remaining = (cnt-i)/images_per_second
+        logEvent ("Current processing speed %f images/second. Estimated remaining time %s" %(images_per_second, str(datetime.timedelta(seconds=time_remaining))))
 
 def logEvent(message):
   print ("[%s] %s" % (str(datetime.datetime.now().time()),message))
