@@ -77,6 +77,22 @@ def label_frames():
   files = get_files_in_folder(destination_folder,exts)
   cnt =len(files)
   i=0
+  graphPath =  "tf_files\\retrained_graph.pb"
+  labelsPath = "tf_files\\retrained_labels.txt"
+  labels = load_labels(labelsPath)
+  graph = load_graph(graphPath)
+  
+  input_height = 224
+  input_width = 224
+  input_mean = 128
+  input_std = 128
+  input_layer = "input"
+  output_layer = "final_result"
+  input_name = "import/" + input_layer
+  output_name = "import/" + output_layer
+  input_operation = graph.get_operation_by_name(input_name)
+  output_operation = graph.get_operation_by_name(output_name)
+
   start = timeit.default_timer()
   '''Disable tensorflow logging...'''
   os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
@@ -84,13 +100,11 @@ def label_frames():
     i+=1
     logEvent("Processing file %s (file %d of %d) please wait." % (file,i,cnt))
 
-    graphPath =  "tf_files\\retrained_graph.pb"
-    labelsPath = "tf_files\\retrained_labels.txt"
-
-    labels = label_image_ext(file,labelsPath,graphPath)
-    labels.sort(key=lambda x: get_score_from_item(x),reverse=True)
-    category=labels[0].split(' ')[0]
-    score=labels[0].split(' ')[1]
+    #file_name,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation
+    results = label_image_ext(file,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation)
+    results.sort(key=lambda x: get_score_from_item(x),reverse=True)
+    category=results[0].split(' ')[0]
+    score=results[0].split(' ')[1]
 
     filename=os.path.split(file)[1]
     elapsed = timeit.default_timer()-start
@@ -154,34 +168,36 @@ def load_graph(model_file):
     tf.import_graph_def(graph_def)
   return graph
 
-def label_image_ext(file_name,label_file,model_file):
-  input_height = 224
-  input_width = 224
-  input_mean = 128
-  input_std = 128
-  input_layer = "input"
-  output_layer = "final_result"
-  graph = load_graph(model_file)
+def label_image_ext(file_name,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation):
+  #input_height = 224
+  #input_width = 224
+  #input_mean = 128
+  #input_std = 128
+  #input_layer = "input"
+  #output_layer = "final_result"
+  #graph = load_graph(model_file)
+  #input_name = "import/" + input_layer
+  #output_name = "import/" + output_layer
+  #input_operation = graph.get_operation_by_name(input_name)
+  #output_operation = graph.get_operation_by_name(output_name)
   
   t = read_tensor_from_image_file(file_name,
                                   input_height=input_height,
                                   input_width=input_width,
                                   input_mean=input_mean,
                                   input_std=input_std)
-  input_name = "import/" + input_layer
-  output_name = "import/" + output_layer
-  input_operation = graph.get_operation_by_name(input_name)
-  output_operation = graph.get_operation_by_name(output_name)
-
+  
+  
   with tf.Session(graph=graph) as sess:
     #start = time.time()
     results = sess.run(output_operation.outputs[0],
                       {input_operation.outputs[0]: t})
     #end=time.time()
+
   results = np.squeeze(results)
 
   top_k = results.argsort()[-5:][::-1]
-  labels = load_labels(label_file)
+  #labels = load_labels(label_file)
 
   #print('\nEvaluation time (1-image): {:.3f}s\n'.format(end-start))
   result = []
