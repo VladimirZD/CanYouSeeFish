@@ -5,7 +5,6 @@
 # So i don't have to watch 3hours of video to see if there was any fish  Or what kind of bottom is there :)
 # For extraction of images i am using ffmpeg  https://www.ffmpeg.org/
 #D:\Development\WaterWolf\Video\ffmpeg-20180928-179ed2d-win64-static\bin\ffmpeg -i D:\Development\WaterWolf\Video\REC00332.MOV -vf fps=1/6 D:\Development\WaterWolf\Video\images\image_g%d.jpg
-#TODO instructions for copying trained model...
 # ==============================================================================
 
 import argparse
@@ -18,7 +17,7 @@ import datetime
 import time
 import tensorflow as tf
 import numpy as np
-from shutil import move
+import shutil
 
 def ensure_path_exists(path):
   """Check if file/folder exists and create if not"""
@@ -71,7 +70,7 @@ def extract_frames ():
     elapsed = timeit.default_timer()-start
     files_per_second = (i/elapsed)  
     logEvent ('File %s processed.Moving to %s. Current processing speed: %f files/second. Estimated remaining time %s' % (file,newFileName,files_per_second,str(datetime.timedelta(seconds=(cnt-i)/files_per_second))))  
-    os.move(file, newFileName)
+    shutil.move(file, newFileName)
 
 def label_frames(): 
   exts = ['.jpg']
@@ -111,7 +110,7 @@ def label_frames():
     logEvent ("File %s (%d of %d) is in category %s %s. Copying to %s folder." % (filename,i,cnt,category.upper(),score,category))
     destination = os.path.join(destination_folder,category)
     newFileName = os.path.join(destination,filename)
-    os.rename(file, newFileName)
+    shutil.move(file, newFileName)
     if (i % 10 ==0):
         elapsed = timeit.default_timer()-start
         images_per_second = (i/elapsed)  
@@ -169,18 +168,6 @@ def load_graph(model_file):
   return graph
 
 def label_image_ext(file_name,labels,graph,input_height,input_width,input_mean,input_std,input_operation,output_operation):
-  #input_height = 224
-  #input_width = 224
-  #input_mean = 128
-  #input_std = 128
-  #input_layer = "input"
-  #output_layer = "final_result"
-  #graph = load_graph(model_file)
-  #input_name = "import/" + input_layer
-  #output_name = "import/" + output_layer
-  #input_operation = graph.get_operation_by_name(input_name)
-  #output_operation = graph.get_operation_by_name(output_name)
-  
   t = read_tensor_from_image_file(file_name,
                                   input_height=input_height,
                                   input_width=input_width,
@@ -197,8 +184,6 @@ def label_image_ext(file_name,labels,graph,input_height,input_width,input_mean,i
   results = np.squeeze(results)
 
   top_k = results.argsort()[-5:][::-1]
-  #labels = load_labels(label_file)
-
   #print('\nEvaluation time (1-image): {:.3f}s\n'.format(end-start))
   result = []
   
@@ -257,6 +242,5 @@ if __name__ == "__main__":
   
 #python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-4.0.2-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6
 #python -m LookForFish --ffmpeg_folder=D:\Utils\ffmpeg-20180928-179ed2d-win64-static --video_path=c:\ --video_folder=D:\Development\CanYouSeeFish\Video --destination_folder=D:\Development\CanYouSeeFish\Extracted_frames --sampling_rate=6
-
   
 
